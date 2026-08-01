@@ -1,8 +1,54 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import * as schema from './schema.ts';
 
 const { Pool } = pg;
+
+function getDbConfig() {
+  const user = process.env.SQL_USER?.trim() || process.env.SQL_ADMIN_USER?.trim();
+  const password = process.env.SQL_PASSWORD?.trim() || process.env.SQL_ADMIN_PASSWORD?.trim();
+  const missing: string[] = [];
+
+  if (!process.env.SQL_HOST || process.env.SQL_HOST.trim() === '') missing.push('SQL_HOST');
+  if (!process.env.SQL_DB_NAME || process.env.SQL_DB_NAME.trim() === '') missing.push('SQL_DB_NAME');
+  if (!user) missing.push('SQL_USER or SQL_ADMIN_USER');
+  if (!password) missing.push('SQL_PASSWORD or SQL_ADMIN_PASSWORD');
+
+  if (missing.length > 0) {
+    throw new Error(`Missing required database environment variable(s): ${missing.join(', ')}`);
+  }
+
+  const useSSL = process.env.SQL_SSL === 'true' || (process.env.SQL_HOST && process.env.SQL_HOST.includes('azure.com'));
+  const connectionString = process.env.DATABASE_URL?.trim();
+
+  const config: any = connectionString
+    ? {
+      connectionString,
+      ssl: useSSL ? { rejectUnauthorized: false } : undefined,
+      connectionTimeoutMillis: 15000,
+      idleTimeoutMillis: 2000,
+      max: 10,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 5000,
+    }
+    : {
+      host: process.env.SQL_HOST,
+      user,
+      password,
+      database: process.env.SQL_DB_NAME,
+      connectionTimeoutMillis: 15000,
+      idleTimeoutMillis: 2000,
+      max: 10,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 5000,
+      ssl: useSSL ? { rejectUnauthorized: false } : undefined,
+    };
+
+  return config;
+}
 
 // Helper to delay execution
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -16,9 +62,9 @@ async function retryWithBackoff<T>(fn: () => Promise<T>, retries = 6, delay = 10
     } catch (err: any) {
       lastError = err;
       const errMsg = err.message || '';
-      
+
       // Check for common connection issues, unexpected termination, etc.
-      const isConnectionError = 
+      const isConnectionError =
         errMsg.includes('Connection terminated unexpectedly') ||
         errMsg.includes('terminate') ||
         errMsg.includes('closed') ||
@@ -40,19 +86,8 @@ async function retryWithBackoff<T>(fn: () => Promise<T>, retries = 6, delay = 10
 }
 
 export const createPool = () => {
-  const useSSL = process.env.SQL_SSL === 'true' || (process.env.SQL_HOST && process.env.SQL_HOST.includes('azure.com'));
-  const p = new Pool({
-    host: process.env.SQL_HOST,
-    user: process.env.SQL_USER,
-    password: process.env.SQL_PASSWORD,
-    database: process.env.SQL_DB_NAME,
-    connectionTimeoutMillis: 15000,
-    idleTimeoutMillis: 2000, // short idle timeout to prune dead connections quickly
-    max: 10,
-    ssl: useSSL ? { rejectUnauthorized: false } : undefined,
-    keepAlive: true,
-    keepAliveInitialDelayMillis: 5000,
-  });
+  const poolConfig = getDbConfig();
+  const p = new Pool(poolConfig);
 
   // Wrap pool.query to support automatic retries on connection failure
   const originalQuery = p.query;
