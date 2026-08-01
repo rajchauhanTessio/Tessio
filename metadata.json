@@ -1,0 +1,6 @@
+{
+  "name": "Tessio New UI",
+  "description": "A comprehensive system featuring a secure Admin Dashboard and a mobile-optimized Client Portal with role-based access, user approval workflows, and record management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
