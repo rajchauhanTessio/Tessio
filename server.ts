@@ -200,7 +200,7 @@ async function seedDatabase() {
     if (!testUser) {
       const hashedPin = bcrypt.hashSync("000000", 10);
       const result = await createUser("Test", "9999999999", "test@gmail.com", hashedPin, "Test");
-      
+
       const defaultServices = [
         { name: "QR Generator", enabled: 1 },
         { name: "Client Management", enabled: 0 },
@@ -215,7 +215,7 @@ async function seedDatabase() {
       await updateUserDetails(testUser.id, "Test", "9999999999", "test@gmail.com", "Test", testUser.dealerCommission || 0);
       await updateUserStatus(testUser.id, "approved");
       await updateProfilePinOnly(testUser.id, hashedPin);
-      
+
       const defaultServices = [
         { name: "QR Generator", enabled: 1 },
         { name: "Client Management", enabled: 0 },
@@ -251,7 +251,7 @@ const authenticateToken = async (req: any, res: any, next: any) => {
 
   jwt.verify(token, JWT_SECRET, async (err: any, decoded: any) => {
     if (err) return res.status(403).json({ error: "Session expired. Please login again." });
-    
+
     if (!decoded || !decoded.id) {
       return res.status(401).json({ error: "Invalid token structure. Please login again." });
     }
@@ -265,7 +265,7 @@ const authenticateToken = async (req: any, res: any, next: any) => {
       if (dbUser.status !== 'approved' && dbUser.role !== 'admin') {
         return res.status(403).json({ error: `Account status: ${dbUser.status}. Please contact admin.` });
       }
-      
+
       req.user = {
         id: dbUser.id,
         username: dbUser.username,
@@ -284,8 +284,8 @@ const requireOwnerOrAdmin = (req: any, res: any, next: any) => {
   if (req.user.role === 'admin' || req.user.userType === 'Owner' || req.user.userType === 'owner') {
     return next();
   }
-  return res.status(403).json({ 
-    error: "Access Denied: Staff 'User' accounts have view-only access. Creating, editing, or deleting records is reserved for Shop Owners." 
+  return res.status(403).json({
+    error: "Access Denied: Staff 'User' accounts have view-only access. Creating, editing, or deleting records is reserved for Shop Owners."
   });
 };
 
@@ -343,9 +343,9 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
     const effectiveUserType = user.role === 'admin' ? 'Owner' : (user.userType || 'Owner');
     const effectiveShopName = user.role === 'admin' ? 'World' : (user.shopName || '');
 
-    const token = jwt.sign({ 
-      id: Number(user.id), 
-      username: user.username, 
+    const token = jwt.sign({
+      id: Number(user.id),
+      username: user.username,
       role: user.role,
       userType: effectiveUserType,
       shopName: effectiveShopName,
@@ -357,15 +357,15 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
     const globalServicesList = await getGlobalServices();
     const publishedServices = globalServicesList.filter(gs => gs.isPublished === 1).map(gs => gs.name);
 
-    res.json({ 
-      token, 
-      user: { 
-        id: user.id, 
-        username: user.username, 
-        role: user.role, 
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        role: user.role,
         userType: effectiveUserType,
-        mobile: user.mobile, 
-        email: user.email, 
+        mobile: user.mobile,
+        email: user.email,
         shopName: effectiveShopName,
         dealerCommission: user.dealerCommission,
         publishedServices,
@@ -377,7 +377,7 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
           }
           return acc;
         }, {})
-      } 
+      }
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -518,11 +518,11 @@ app.get("/api/admin/user-services", authenticateToken, async (req: any, res) => 
     const usersList = await getClientUsers();
     const userServicesList = await getAllUserServices();
     const globalServicesList = await getGlobalServices();
-    
+
     const data = usersList.map((u: any) => {
       const servicesMap: any = {};
       const individualUserServices = userServicesList.filter((s: any) => s.userId === u.id);
-      
+
       globalServicesList.forEach(gs => {
         servicesMap[gs.name] = individualUserServices.find((s: any) => s.serviceName === gs.name)?.isEnabled ?? 0;
       });
@@ -534,7 +534,7 @@ app.get("/api/admin/user-services", authenticateToken, async (req: any, res) => 
         services: servicesMap
       };
     });
-    
+
     res.json(data);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -558,18 +558,18 @@ app.get("/api/user/profile", authenticateToken, async (req: any, res) => {
   try {
     const user = await getUserById(Number(req.user.id));
     if (!user) return res.status(404).json({ error: "User not found" });
-    
+
     const services = await getUserServicesList(user.id);
     const globalServicesList = await getGlobalServices();
     const publishedServices = globalServicesList.filter(gs => gs.isPublished === 1).map(gs => gs.name);
-    
-    res.json({ 
-      user: { 
-        id: user.id, 
-        username: user.username, 
-        role: user.role, 
-        mobile: user.mobile, 
-        email: user.email, 
+
+    res.json({
+      user: {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        mobile: user.mobile,
+        email: user.email,
         shopName: user.shopName,
         dealerCommission: user.dealerCommission,
         publishedServices,
@@ -581,7 +581,7 @@ app.get("/api/user/profile", authenticateToken, async (req: any, res) => {
           }
           return acc;
         }, {})
-      } 
+      }
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -592,16 +592,16 @@ app.get("/api/user/services", authenticateToken, async (req: any, res) => {
   try {
     const currentServices = await getUserServicesList(req.user.id);
     const globalServicesList = await getGlobalServices();
-    
+
     const availableServices = globalServicesList
       .filter(gs => gs.isPublished === 1)
       .map(gs => gs.name);
-    
+
     const status = availableServices.map(name => ({
       name,
       status: currentServices.find((s: any) => s.service_name === name)?.is_enabled ?? 0
     }));
-    
+
     res.json(status);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -613,7 +613,7 @@ app.post("/api/user/services/request", authenticateToken, async (req: any, res) 
   try {
     const currentServices = await getUserServicesList(req.user.id);
     const current = currentServices.find(s => s.service_name === serviceName);
-    
+
     if (current && current.is_enabled === 1) {
       return res.status(400).json({ error: "Service already enabled" });
     }
@@ -653,9 +653,9 @@ app.post("/api/admin/users/:id/records/import", authenticateToken, async (req: a
         }
       }
       if (duplicates.length > 0) {
-        return res.json({ 
-          success: false, 
-          requiresDecision: true, 
+        return res.json({
+          success: false,
+          requiresDecision: true,
           duplicates: duplicates,
           duplicateCount: duplicates.length,
           totalCount: recordsInput.length
@@ -675,7 +675,7 @@ app.post("/api/admin/users/:id/records/import", authenticateToken, async (req: a
 app.put("/api/admin/profile", authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: "Admin only" });
   const { username, email, pin } = req.body;
-  
+
   try {
     let hashedPin = pin ? bcrypt.hashSync(pin, 10) : undefined;
     await updateProfileAdmin(req.user.id, username, email, hashedPin);
@@ -767,16 +767,16 @@ app.post("/api/records/bulk-delete", authenticateToken, requireOwnerOrAdmin, asy
   try {
     const { ids } = req.body;
     const userId = Number(req.user.id);
-    
+
     if (!Array.isArray(ids)) {
       return res.status(400).json({ error: "Invalid data: ids must be an array" });
     }
-    
+
     const idsNums = ids.map(id => Number(id)).filter(id => !isNaN(id));
     if (idsNums.length === 0) {
       return res.json({ success: true, count: 0 });
     }
-    
+
     await bulkDeleteRecords(idsNums, userId);
     await logAction(userId, "RECORD_BULK_DELETE", `Deleted ${idsNums.length} records`);
     res.json({ success: true, count: idsNums.length, requested: ids.length });
@@ -801,9 +801,9 @@ app.post("/api/records", authenticateToken, requireOwnerOrAdmin, async (req: any
   try {
     const user = await getUserById(userId);
     const commission = user?.dealerCommission || 0;
-    
+
     const existing = await checkRecordDuplicate(userId, companyCode);
-    
+
     if (existing && !overwrite) {
       return res.json({ success: false, duplicate: true, existingId: existing.id });
     }
@@ -813,7 +813,7 @@ app.post("/api/records", authenticateToken, requireOwnerOrAdmin, async (req: any
       await logAction(userId, "RECORD_UPDATE", `Overwrote existing record: ${dealerCode}/${companyCode}`);
       return res.json({ success: true, id: existing.id, updated: true });
     }
-    
+
     const result = await insertRecordSingle(userId, dealerCode, companyCode, costPrice || 0, commission);
     await logAction(userId, "RECORD_ADD", `Added record: ${dealerCode}/${companyCode}`);
     res.json({ success: true, id: result.id });
@@ -857,9 +857,9 @@ app.post("/api/records/bulk-import", authenticateToken, requireOwnerOrAdmin, asy
       }
 
       if (duplicates.length > 0) {
-        return res.json({ 
-          success: false, 
-          requiresDecision: true, 
+        return res.json({
+          success: false,
+          requiresDecision: true,
           duplicates: duplicates,
           duplicateCount: duplicates.length,
           totalCount: cleanRecords.length
@@ -928,10 +928,10 @@ app.post("/api/auth/reset-pin-request", authLimiter, async (req, res) => {
     }
 
     await logAction(user.id, "PIN_RESET_REQUEST", `PIN reset requested for ${username}. Simulated send to ${user.email} and ${user.mobile}`);
-    
-    res.json({ 
-      success: true, 
-      message: `A reset instruction has been sent to your registered email (${user.email}) and mobile (${user.mobile}).` 
+
+    res.json({
+      success: true,
+      message: `A reset instruction has been sent to your registered email (${user.email}) and mobile (${user.mobile}).`
     });
   } catch (error: any) {
     sendServerError(res, error, "Failed to process PIN reset request.");
@@ -1039,7 +1039,7 @@ app.get("/api/clients/:id/purchases", authenticateToken, async (req: any, res) =
 app.post("/api/clients/:id/purchases", authenticateToken, requireOwnerOrAdmin, async (req: any, res) => {
   const { item_details, amount, purchase_date, dealer_code } = req.body;
   const clientId = parseInt(req.params.id);
-  
+
   if (!item_details) return res.status(400).json({ error: "Item details required" });
   if (isNaN(clientId)) return res.status(400).json({ error: "Invalid client ID" });
 
@@ -1136,7 +1136,7 @@ app.get("/api/invoices/:id", authenticateToken, async (req: any, res) => {
   try {
     const invoice = await getInvoiceById(parseInt(req.params.id), req.user.id);
     if (!invoice) return res.status(404).json({ error: "Invoice not found" });
-    
+
     const items = await getInvoiceItems(parseInt(req.params.id));
     res.json({
       id: invoice.id,
@@ -1359,7 +1359,7 @@ app.post("/api/qr/scrape", authenticateToken, publicLimiter, async (req: any, re
           }
         });
       }
-      
+
       // Fallback external fetch
       try {
         const apiUrl = url.replace(/\/shared\/([a-zA-Z0-9_-]+)/, '/api/shared/$1');
@@ -1384,17 +1384,17 @@ app.post("/api/qr/scrape", authenticateToken, publicLimiter, async (req: any, re
       response = await fetchUrlWithRetry(url, 3);
     } catch (axiosErr: any) {
       if (axiosErr.response?.status === 429) {
-        return res.status(429).json({ 
-          error: "The target website is temporarily limiting requests (HTTP 429 Too Many Requests). Please try again in a few moments or upload an Excel file directly." 
+        return res.status(429).json({
+          error: "The target website is temporarily limiting requests (HTTP 429 Too Many Requests). Please try again in a few moments or upload an Excel file directly."
         });
       }
       if (axiosErr.response?.status === 403) {
-        return res.status(403).json({ 
-          error: "Access to the target website was blocked (HTTP 403 Forbidden). Please check the URL or upload an Excel file directly." 
+        return res.status(403).json({
+          error: "Access to the target website was blocked (HTTP 403 Forbidden). Please check the URL or upload an Excel file directly."
         });
       }
-      return res.status(500).json({ 
-        error: "Failed to scrape URL: " + (axiosErr.message || "Network request failed") 
+      return res.status(500).json({
+        error: "Failed to scrape URL: " + (axiosErr.message || "Network request failed")
       });
     }
 
@@ -1599,7 +1599,7 @@ app.post("/api/qr/scrape", authenticateToken, publicLimiter, async (req: any, re
       const lineProducts: any[] = [];
       const bodyText = $('body').text();
       const lines = bodyText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-      
+
       lines.forEach(line => {
         if (line.length > 120) return;
         const priceMatch = line.match(/(?:rs\.?|inr|price|mrp|rrp|rate|cost|₹|\$)\s*([\d,]+(?:\.\d{2})?)/i);
@@ -1669,7 +1669,7 @@ app.post("/api/qr/scrape", authenticateToken, publicLimiter, async (req: any, re
         timestamp: Date.now()
       });
 
-      return res.json({ 
+      return res.json({
         success: true,
         extracted: extractedPayload
       });
@@ -1717,7 +1717,7 @@ app.get("/api/shared/:id", publicLimiter, async (req, res) => {
   try {
     const table = await getPublishedTableById(sharedId);
     if (!table) return res.status(404).json({ error: "Shared link not found" });
-    
+
     res.json({
       title: table.title,
       data: JSON.parse(table.data || '{}'),
@@ -1729,7 +1729,7 @@ app.get("/api/shared/:id", publicLimiter, async (req, res) => {
 });
 
 async function startServer() {
-  const PORT = 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
