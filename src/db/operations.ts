@@ -38,38 +38,63 @@ export async function getUserById(id: number) {
 }
 
 export async function getUserByUsername(username: string) {
-  const userList = await db.select().from(users).where(eq(users.username, username)).limit(1);
+  if (!username || !username.trim()) return null;
+  const userList = await db.select().from(users).where(sql`LOWER(TRIM(${users.username})) = LOWER(TRIM(${username}))`).limit(1);
   return userList[0];
 }
 
 export async function getOwnerByShopName(shopName: string) {
-  if (!shopName) return null;
+  if (!shopName || !shopName.trim()) return null;
   const list = await db.select()
     .from(users)
     .where(and(
-      sql`LOWER(${users.shopName}) = LOWER(${shopName.trim()})`,
-      or(eq(users.userType, 'Owner'), eq(users.role, 'owner'))
+      sql`LOWER(TRIM(${users.shopName})) = LOWER(TRIM(${shopName}))`,
+      sql`LOWER(COALESCE(${users.userType}, '')) NOT IN ('user', 'staff')`
     ))
+    .orderBy(users.id)
+    .limit(1);
+  return list[0] || null;
+}
+
+export async function getShopByName(shopName: string) {
+  if (!shopName || !shopName.trim()) return null;
+  const list = await db.select()
+    .from(users)
+    .where(sql`LOWER(TRIM(${users.shopName})) = LOWER(TRIM(${shopName}))`)
     .limit(1);
   return list[0] || null;
 }
 
 export async function createUser(username: string, mobile: string, email: string, hashedPin: string, shopName: string, userType: string = 'Owner') {
-  const normalizedType = userType && userType.toLowerCase() === 'user' ? 'User' : 'Owner';
+  const isStaffType = userType && (
+    userType.toLowerCase() === 'user' || 
+    userType.toLowerCase() === 'staff'
+  );
+  const normalizedType = isStaffType ? 'Staff' : 'Owner';
+  const trimmedShop = shopName ? shopName.trim() : '';
 
-  if (normalizedType === 'Owner') {
-    const existingOwner = await getOwnerByShopName(shopName);
+  if (!trimmedShop) {
+    throw new Error("Shop name is required.");
+  }
+
+  if (normalizedType === 'Staff') {
+    const existingShop = await getShopByName(trimmedShop);
+    if (!existingShop) {
+      throw new Error("Entered shop doesn't exist, please type the correct shop name.");
+    }
+  } else if (normalizedType === 'Owner') {
+    const existingOwner = await getOwnerByShopName(trimmedShop);
     if (existingOwner) {
-      throw new Error(`Shop "${shopName}" already has an Owner registered (${existingOwner.username}). A shop can have only 1 Owner. Please sign up as a User (Staff) for this shop, or enter a different Shop Name.`);
+      throw new Error(`Shop "${trimmedShop}" already has an Owner registered (${existingOwner.username}). A shop can have only 1 Owner. Please sign up as Staff for this shop, or enter a different Shop Name.`);
     }
   }
 
   const result = await db.insert(users).values({
-    username,
-    mobile,
-    email,
+    username: username.trim(),
+    mobile: mobile.trim(),
+    email: email.trim(),
     pin: hashedPin,
-    shopName: shopName.trim(),
+    shopName: trimmedShop,
     userType: normalizedType,
     role: 'client',
     status: 'pending'
@@ -123,7 +148,7 @@ export async function toggleGlobalService(name: string, isPublished: boolean) {
 }
 
 export async function getClientUsers() {
-  return db.select({
+  const list = await db.select({
     id: users.id,
     username: users.username,
     mobile: users.mobile,
@@ -134,6 +159,11 @@ export async function getClientUsers() {
     status: users.status,
     created_at: users.createdAt,
   }).from(users).where(or(eq(users.role, 'client'), eq(users.role, 'owner'), eq(users.role, 'user'))).orderBy(desc(users.createdAt));
+
+  return list.map(u => ({
+    ...u,
+    user_type: (u.user_type && (u.user_type.toLowerCase() === 'user' || u.user_type.toLowerCase() === 'staff')) ? 'Staff' : 'Owner'
+  }));
 }
 
 export async function updateUserStatus(id: number, status: string) {
@@ -149,7 +179,8 @@ export async function updateUserDetails(id: number, username: string, mobile: st
     dealerCommission: dealer_commission,
   };
   if (user_type) {
-    payload.userType = user_type;
+    const isStaffType = user_type.toLowerCase() === 'user' || user_type.toLowerCase() === 'staff';
+    payload.userType = isStaffType ? 'Staff' : 'Owner';
   }
   return db.update(users).set(payload).where(eq(users.id, id));
 }
@@ -222,8 +253,20 @@ export async function getAllUserServices() {
 }
 
 export async function toggleUserService(userId: number, serviceName: string, isEnabled: boolean) {
+  const currentUser = await getUserById(userId);
+  let targetUserId = userId;
+  if (currentUser && currentUser.shopName) {
+    const isStaff = currentUser.role !== 'admin' && currentUser.role !== 'owner' && (
+      !currentUser.userType || currentUser.userType.toLowerCase() !== 'owner'
+    );
+    if (isStaff) {
+      const owner = await getOwnerByShopName(currentUser.shopName);
+      if (owner) targetUserId = owner.id;
+    }
+  }
+
   return db.insert(userServices).values({
-    userId,
+    userId: targetUserId,
     serviceName,
     isEnabled: isEnabled ? 1 : 0
   }).onConflictDoUpdate({
@@ -234,16 +277,48 @@ export async function toggleUserService(userId: number, serviceName: string, isE
 
 // Client services queries
 export async function getUserServicesList(userId: number) {
-  const shopUserIds = await getShopUserIds(userId);
-  return db.select({
+  const currentUser = await getUserById(userId);
+  if (!currentUser) return [];
+
+  const isStaff = currentUser.role !== 'admin' && currentUser.role !== 'owner' && (
+    !currentUser.userType || currentUser.userType.toLowerCase() !== 'owner'
+  );
+
+  let targetUserId = userId;
+  if (isStaff && currentUser.shopName) {
+    const owner = await getOwnerByShopName(currentUser.shopName);
+    if (owner) {
+      targetUserId = owner.id;
+    }
+  }
+
+  const rows = await db.select({
+    userId: userServices.userId,
     service_name: userServices.serviceName,
     is_enabled: userServices.isEnabled
-  }).from(userServices).where(inArray(userServices.userId, shopUserIds));
+  }).from(userServices).where(eq(userServices.userId, targetUserId));
+
+  return rows.map(r => ({
+    service_name: r.service_name,
+    is_enabled: r.is_enabled
+  }));
 }
 
 export async function requestUserService(userId: number, serviceName: string) {
+  const currentUser = await getUserById(userId);
+  let targetUserId = userId;
+  if (currentUser && currentUser.shopName) {
+    const isStaff = currentUser.role !== 'admin' && currentUser.role !== 'owner' && (
+      !currentUser.userType || currentUser.userType.toLowerCase() !== 'owner'
+    );
+    if (isStaff) {
+      const owner = await getOwnerByShopName(currentUser.shopName);
+      if (owner) targetUserId = owner.id;
+    }
+  }
+
   return db.insert(userServices).values({
-    userId,
+    userId: targetUserId,
     serviceName,
     isEnabled: 2
   }).onConflictDoUpdate({
@@ -253,7 +328,19 @@ export async function requestUserService(userId: number, serviceName: string) {
 }
 
 export async function disableUserService(userId: number, serviceName: string) {
-  return db.update(userServices).set({ isEnabled: 0 }).where(and(eq(userServices.userId, userId), eq(userServices.serviceName, serviceName)));
+  const currentUser = await getUserById(userId);
+  let targetUserId = userId;
+  if (currentUser && currentUser.shopName) {
+    const isStaff = currentUser.role !== 'admin' && currentUser.role !== 'owner' && (
+      !currentUser.userType || currentUser.userType.toLowerCase() !== 'owner'
+    );
+    if (isStaff) {
+      const owner = await getOwnerByShopName(currentUser.shopName);
+      if (owner) targetUserId = owner.id;
+    }
+  }
+
+  return db.update(userServices).set({ isEnabled: 0 }).where(and(eq(userServices.userId, targetUserId), eq(userServices.serviceName, serviceName)));
 }
 
 // Client Records Queries

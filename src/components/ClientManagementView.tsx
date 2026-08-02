@@ -21,7 +21,7 @@ import {
 
 export default function ClientManagementView({ fetchWithAuth }: { fetchWithAuth: any }) {
   const { user } = useAuth();
-  const isReadOnly = user?.userType === 'User' || user?.userType === 'user';
+  const isReadOnly = user?.userType === 'Staff' || user?.userType === 'staff' || user?.userType === 'User' || user?.userType === 'user';
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);

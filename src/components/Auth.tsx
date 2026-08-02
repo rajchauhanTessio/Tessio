@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { motion } from 'motion/react';
-import { ShieldCheck, Phone, User, Mail, Store, Lock, ArrowLeft } from 'lucide-react';
+import { ShieldCheck, Phone, User, Mail, Store, Lock, ArrowLeft, ChevronDown } from 'lucide-react';
 import tessioLogo from '../assets/images/tessio_logo_1783360514202.jpg';
 
 export default function Auth({ onShowFlyer }: { onShowFlyer?: () => void }) {
@@ -17,7 +17,7 @@ export default function Auth({ onShowFlyer }: { onShowFlyer?: () => void }) {
   const [mobile, setMobile] = useState('');
   const [email, setEmail] = useState('');
   const [shopName, setShopName] = useState('');
-  const [userType, setUserType] = useState<'Owner' | 'User'>('Owner');
+  const [userType, setUserType] = useState<'Owner' | 'Staff'>('Owner');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -187,37 +187,23 @@ export default function Auth({ onShowFlyer }: { onShowFlyer?: () => void }) {
             
             <div className="grid grid-cols-1 gap-3">
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-bold text-slate-500 ml-1">Account Role / User Type</label>
-                <div className="grid grid-cols-2 gap-2 bg-slate-50 p-1 rounded-xl border border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => setUserType('Owner')}
-                    className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                      userType === 'Owner' 
-                        ? 'bg-emerald-600 text-white shadow-sm' 
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
+                <label className="text-xs font-bold text-slate-500 ml-1">Account type</label>
+                <div className="relative">
+                  <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" size={18} />
+                  <select
+                    value={userType}
+                    onChange={(e) => setUserType(e.target.value as 'Owner' | 'Staff')}
+                    className="w-full bg-slate-50 border-2 border-slate-50 rounded-xl py-3 pl-12 pr-10 text-sm font-semibold text-slate-700 focus:bg-white focus:border-emerald-500 transition-all outline-none appearance-none cursor-pointer"
                   >
-                    <ShieldCheck size={14} />
-                    Shop Owner
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setUserType('User')}
-                    className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                      userType === 'User' 
-                        ? 'bg-emerald-600 text-white shadow-sm' 
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    <User size={14} />
-                    User / Staff
-                  </button>
+                    <option value="Owner">Shop Owner</option>
+                    <option value="Staff">Staff</option>
+                  </select>
+                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
                 </div>
                 <p className="text-[11px] text-slate-400 ml-1">
                   {userType === 'Owner' 
                     ? '1 Owner per shop. Has full authority to add, update & delete.' 
-                    : 'Staff account. View-only access to share data with Shop Owner.'}
+                    : 'Staff account under an existing shop. View-only access.'}
                 </p>
               </div>
 

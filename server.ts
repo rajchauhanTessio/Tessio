@@ -10,14 +10,16 @@ import { fileURLToPath } from "url";
 import axios from "axios";
 import * as cheerio from "cheerio";
 import https from "https";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 
+import { ensureDbReady } from "./src/db/index.ts";
 import {
   logAction,
   getAdminUser,
   createAdminUser,
   getUserById,
   getUserByUsername,
+  getOwnerByShopName,
   createUser,
   getPendingServices,
   getGlobalServices,
@@ -110,7 +112,7 @@ const getClientIp = (req: any): string => {
       ipStr = parts[0];
     }
   }
-  return ipStr || '127.0.0.1';
+  return ipKeyGenerator(ipStr || '127.0.0.1');
 };
 
 const authLimiter = rateLimit({
@@ -119,7 +121,7 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getClientIp,
-  validate: { ip: false, xForwardedForHeader: false },
+  validate: false,
   message: { error: "Too many authentication requests from this IP. Please try again after 15 minutes." }
 });
 
@@ -129,7 +131,7 @@ const publicLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getClientIp,
-  validate: { ip: false, xForwardedForHeader: false },
+  validate: false,
   message: { error: "Too many requests. Please slow down and try again shortly." }
 });
 
@@ -139,7 +141,7 @@ const generalApiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getClientIp,
-  validate: { ip: false, xForwardedForHeader: false },
+  validate: false,
   message: { error: "Rate limit exceeded. Please wait a moment before trying again." }
 });
 
@@ -213,6 +215,7 @@ function sanitizeRecordItem(item: any): any {
 // Seed default users and services on server start
 async function seedDatabase() {
   try {
+    await ensureDbReady();
     const admin = await getAdminUser();
     if (!admin) {
       const hashedPin = bcrypt.hashSync("123456", 10);
@@ -226,6 +229,7 @@ async function seedDatabase() {
     if (!testUser) {
       const hashedPin = bcrypt.hashSync("000000", 10);
       const result = await createUser("Test", "9999999999", "test@gmail.com", hashedPin, "Test");
+      await updateUserStatus(result.id, "approved");
 
       const defaultServices = [
         { name: "QR Generator", enabled: 1 },
@@ -272,31 +276,66 @@ const authenticateToken = async (req: any, res: any, next: any) => {
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token || token === 'null' || token === 'undefined') {
-    return res.status(401).json({ error: "Unauthorized" });
+    return res.status(401).json({ error: "Session expired or missing token. Please log in again." });
   }
 
   jwt.verify(token, JWT_SECRET, async (err: any, decoded: any) => {
-    if (err) return res.status(403).json({ error: "Session expired. Please login again." });
+    if (err) return res.status(401).json({ error: "Session expired. Please log in again." });
 
     if (!decoded || !decoded.id) {
-      return res.status(401).json({ error: "Invalid token structure. Please login again." });
+      return res.status(401).json({ error: "Invalid session structure. Please log in again." });
     }
 
     try {
       const dbUser = await getUserById(decoded.id);
       if (!dbUser) {
-        return res.status(401).json({ error: "User no longer exists. Please login again." });
+        return res.status(401).json({ error: "User account no longer exists. Please log in again." });
       }
 
-      if (dbUser.status !== 'approved' && dbUser.role !== 'admin') {
-        return res.status(403).json({ error: `Account status: ${dbUser.status}. Please contact admin.` });
+      const isOwnerOrAdmin = dbUser.role === 'admin' || dbUser.role === 'owner' || (dbUser.userType && dbUser.userType.toLowerCase() === 'owner');
+      const isStaff = !isOwnerOrAdmin;
+
+      if (isStaff) {
+        const owner = await getOwnerByShopName(dbUser.shopName);
+        if (!owner) {
+          return res.status(403).json({ error: "No active plan for the shop" });
+        }
+        if (owner.status === 'pending') {
+          return res.status(403).json({ error: "The shop owner account is pending administrator approval." });
+        }
+        if (owner.status === 'disabled') {
+          return res.status(403).json({ error: "The shop owner account has been disabled." });
+        }
+        if (owner.status !== 'approved') {
+          return res.status(403).json({ error: "No active plan for the shop" });
+        }
+
+        if (dbUser.status === 'pending') {
+          return res.status(403).json({ error: "Your account is pending administrator approval. Please contact support or your administrator." });
+        }
+        if (dbUser.status === 'disabled') {
+          return res.status(403).json({ error: "Your account has been disabled. Please contact your administrator for assistance." });
+        }
+        if (dbUser.status !== 'approved') {
+          return res.status(403).json({ error: `Account status '${dbUser.status}' is restricted. Please contact your administrator.` });
+        }
+      } else {
+        if (dbUser.status === 'pending' && dbUser.role !== 'admin') {
+          return res.status(403).json({ error: "Your account is pending administrator approval. Please contact support or your administrator." });
+        }
+        if (dbUser.status === 'disabled' && dbUser.role !== 'admin') {
+          return res.status(403).json({ error: "Your account has been disabled. Please contact your administrator for assistance." });
+        }
+        if (dbUser.status !== 'approved' && dbUser.role !== 'admin') {
+          return res.status(403).json({ error: `Account status '${dbUser.status}' is restricted. Please contact your administrator.` });
+        }
       }
 
       req.user = {
         id: dbUser.id,
         username: dbUser.username,
         role: dbUser.role,
-        userType: dbUser.role === 'admin' ? 'Owner' : (dbUser.userType || 'Owner'),
+        userType: dbUser.role === 'admin' ? 'Owner' : (isStaff ? 'Staff' : 'Owner'),
         shopName: dbUser.role === 'admin' ? 'World' : (dbUser.shopName || ''),
       };
       next();
@@ -311,7 +350,16 @@ const requireOwnerOrAdmin = (req: any, res: any, next: any) => {
     return next();
   }
   return res.status(403).json({
-    error: "Access Denied: Staff 'User' accounts have view-only access. Creating, editing, or deleting records is reserved for Shop Owners."
+    error: "Access Denied: Staff accounts have view-only access. Creating, modifying, or deleting records is reserved for Shop Owners."
+  });
+};
+
+const requireAdmin = (req: any, res: any, next: any) => {
+  if (req.user && req.user.role === 'admin') {
+    return next();
+  }
+  return res.status(403).json({
+    error: "Access Denied: Administrator privileges are required to perform this action."
   });
 };
 
@@ -339,11 +387,15 @@ app.post("/api/auth/register", authLimiter, async (req, res) => {
     await logAction(result.id, "REGISTER", `User ${username} registered as ${userType || 'Owner'}, status: pending`);
     res.json({ success: true, message: "Registration successful. Awaiting admin approval." });
   } catch (error: any) {
-    if (error.message && error.message.includes("already has an Owner")) {
+    if (error.message && (
+      error.message.includes("already has an Owner") || 
+      error.message.includes("Entered shop doesn't exist") || 
+      error.message.includes("Shop name is required")
+    )) {
       return res.status(400).json({ error: error.message });
     }
     const isConstraint = error.message && (error.message.includes("unique") || error.message.includes("constraint"));
-    res.status(400).json({ error: isConstraint ? "Username or Mobile already exists" : "Registration failed. Please verify your details." });
+    res.status(400).json({ error: isConstraint ? "Username or Mobile already exists" : (error.message || "Registration failed. Please verify your details.") });
   }
 });
 
@@ -362,11 +414,47 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    if (user.status !== 'approved' && user.role !== 'admin') {
-      return res.status(403).json({ error: `Account status: ${user.status}. Please contact admin.` });
+    const isStaff = user.role !== 'admin' && user.role !== 'owner' && (
+      user.userType && (user.userType.toLowerCase() === 'user' || user.userType.toLowerCase() === 'staff')
+    );
+
+    if (isStaff) {
+      const owner = await getOwnerByShopName(user.shopName);
+      if (!owner) {
+        return res.status(403).json({ error: "No active plan for the shop" });
+      }
+      if (owner.status === 'pending') {
+        return res.status(403).json({ error: "The shop owner account is pending administrator approval." });
+      }
+      if (owner.status === 'disabled') {
+        return res.status(403).json({ error: "The shop owner account has been disabled." });
+      }
+      if (owner.status !== 'approved') {
+        return res.status(403).json({ error: "No active plan for the shop" });
+      }
+
+      if (user.status === 'pending') {
+        return res.status(403).json({ error: "Your account is currently pending administrator approval. Please contact the administrator to activate your account." });
+      }
+      if (user.status === 'disabled') {
+        return res.status(403).json({ error: "Your account has been disabled. Please contact the administrator for assistance." });
+      }
+      if (user.status !== 'approved') {
+        return res.status(403).json({ error: `Account access restricted (Status: ${user.status}). Please contact the administrator.` });
+      }
+    } else {
+      if (user.status === 'pending' && user.role !== 'admin') {
+        return res.status(403).json({ error: "Your account is currently pending administrator approval. Please contact the administrator to activate your account." });
+      }
+      if (user.status === 'disabled' && user.role !== 'admin') {
+        return res.status(403).json({ error: "Your account has been disabled. Please contact the administrator for assistance." });
+      }
+      if (user.status !== 'approved' && user.role !== 'admin') {
+        return res.status(403).json({ error: `Account access restricted (Status: ${user.status}). Please contact the administrator.` });
+      }
     }
 
-    const effectiveUserType = user.role === 'admin' ? 'Owner' : (user.userType || 'Owner');
+    const effectiveUserType = user.role === 'admin' ? 'Owner' : (isStaff ? 'Staff' : 'Owner');
     const effectiveShopName = user.role === 'admin' ? 'World' : (user.shopName || '');
 
     const token = jwt.sign({
@@ -542,24 +630,25 @@ app.get("/api/admin/user-services", authenticateToken, async (req: any, res) => 
   if (req.user.role !== 'admin') return res.status(403).json({ error: "Admin only" });
   try {
     const usersList = await getClientUsers();
-    const userServicesList = await getAllUserServices();
     const globalServicesList = await getGlobalServices();
 
-    const data = usersList.map((u: any) => {
+    const data = await Promise.all(usersList.map(async (u: any) => {
       const servicesMap: any = {};
-      const individualUserServices = userServicesList.filter((s: any) => s.userId === u.id);
+      const uServices = await getUserServicesList(u.id);
 
       globalServicesList.forEach(gs => {
-        servicesMap[gs.name] = individualUserServices.find((s: any) => s.serviceName === gs.name)?.isEnabled ?? 0;
+        const found = uServices.find((s: any) => s.service_name === gs.name);
+        servicesMap[gs.name] = found ? found.is_enabled : 0;
       });
 
       return {
         id: u.id,
         username: u.username,
         shop_name: u.shop_name,
+        user_type: u.user_type,
         services: servicesMap
       };
-    });
+    }));
 
     res.json(data);
   } catch (error: any) {
@@ -589,14 +678,22 @@ app.get("/api/user/profile", authenticateToken, async (req: any, res) => {
     const globalServicesList = await getGlobalServices();
     const publishedServices = globalServicesList.filter(gs => gs.isPublished === 1).map(gs => gs.name);
 
+    const isStaffUser = user.role !== 'admin' && user.role !== 'owner' && (
+      user.userType && (user.userType.toLowerCase() === 'user' || user.userType.toLowerCase() === 'staff')
+    );
+    const effectiveUserType = user.role === 'admin' ? 'Owner' : (isStaffUser ? 'Staff' : 'Owner');
+    const effectiveShopName = user.role === 'admin' ? 'World' : (user.shopName || '');
+
     res.json({
       user: {
         id: user.id,
         username: user.username,
         role: user.role,
+        userType: effectiveUserType,
+        status: user.status,
         mobile: user.mobile,
         email: user.email,
-        shopName: user.shopName,
+        shopName: effectiveShopName,
         dealerCommission: user.dealerCommission,
         publishedServices,
         services: services.reduce((acc: any, s: any) => {
@@ -1756,6 +1853,22 @@ app.get("/api/shared/:id", publicLimiter, async (req, res) => {
 
 async function startServer() {
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
+  // 404 handler for unmatched API routes
+  app.use("/api/*", (req, res) => {
+    res.status(404).json({ error: `API endpoint not found: ${req.originalUrl}` });
+  });
+
+  // Global Express error handler
+  app.use((err: any, req: any, res: any, next: any) => {
+    console.error("Unhandled server error:", err);
+    if (res.headersSent) {
+      return next(err);
+    }
+    res.status(err.status || err.statusCode || 500).json({
+      error: err.message || "An unexpected server error occurred."
+    });
+  });
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

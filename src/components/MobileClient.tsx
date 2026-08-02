@@ -62,7 +62,7 @@ function cn(...inputs: ClassValue[]) {
 
 export default function MobileClient({ onShowFlyer }: { onShowFlyer?: () => void }) {
   const { user, logout, fetchWithAuth, updateUser } = useAuth();
-  const isReadOnly = user?.userType === 'User' || user?.userType === 'user';
+  const isReadOnly = user?.userType === 'Staff' || user?.userType === 'staff' || user?.userType === 'User' || user?.userType === 'user';
   const [activeTab, setActiveTab] = useState<'home' | 'account' | 'settings'>('home');
   const [view, setView] = useState<'list' | 'add' | 'edit' | 'details' | 'qr' | 'clients' | 'invoices' | 'manage-services' | 'records-list'>('list');
   const [selectedExcelFile, setSelectedExcelFile] = useState<File | null>(null);
@@ -1641,7 +1641,7 @@ function AccountView({ onRecordsUpdate }: { onRecordsUpdate: () => void }) {
           </div>
           <div>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Account Role & Shop Access</p>
-            <p className="font-bold text-slate-900">{user.userType === 'User' ? 'Staff (View-Only)' : 'Shop Owner (Full Access)'}</p>
+            <p className="font-bold text-slate-900">{(user?.userType === 'Staff' || user?.userType === 'staff' || user?.userType === 'User' || user?.userType === 'user') ? 'Staff (View-Only)' : 'Shop Owner (Full Access)'}</p>
             <p className="text-xs text-slate-400 font-medium">Shared Shop: {user.shopName || 'World'}</p>
           </div>
         </div>

@@ -1404,7 +1404,7 @@ export default function AdminDashboard({ onShowFlyer }: { onShowFlyer?: () => vo
                     onChange={(e) => setEditForm({ ...editForm, user_type: e.target.value })}
                   >
                     <option value="Owner">Shop Owner (Full Authority)</option>
-                    <option value="User">User / Staff (View-Only Access)</option>
+                    <option value="Staff">Staff (View-Only Access)</option>
                   </select>
                 </div>
                 <div className="flex gap-3 pt-4">

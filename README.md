@@ -44,10 +44,3 @@ npm run build
 npm start
 ```
 
-## 🛠️ Troubleshooting
-
-### Login Issues
-The default admin credentials are:
-- **Username**: `admin`
-- **PIN**: `123456`
-

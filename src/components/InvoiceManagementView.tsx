@@ -42,7 +42,7 @@ interface Invoice {
 
 export default function InvoiceManagementView({ fetchWithAuth }: { fetchWithAuth: any }) {
   const { user } = useAuth();
-  const isReadOnly = user?.userType === 'User' || user?.userType === 'user';
+  const isReadOnly = user?.userType === 'Staff' || user?.userType === 'staff' || user?.userType === 'User' || user?.userType === 'user';
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
