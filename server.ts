@@ -93,11 +93,33 @@ const __dirname = resolvedDirname;
 const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === "production" ? (() => { throw new Error("JWT_SECRET environment variable must be set in production"); })() : "fallback-secret-development-key-tessio-2026");
 
 // Rate Limiters
+const getClientIp = (req: any): string => {
+  let rawIp = req.headers['x-forwarded-for'] || req.ip || req.socket?.remoteAddress || '127.0.0.1';
+  if (Array.isArray(rawIp)) {
+    rawIp = rawIp[0];
+  }
+  let ipStr = String(rawIp).split(',')[0].trim();
+  // Strip port if present (e.g., "103.190.190.212:59082" or "[2001:db8::1]:8080")
+  if (ipStr.startsWith('[')) {
+    const match = ipStr.match(/^\[([^\]]+)\]/);
+    if (match) ipStr = match[1];
+  } else {
+    const parts = ipStr.split(':');
+    if (parts.length === 2 && /^\d+$/.test(parts[1])) {
+      // IPv4 with port: 103.190.190.212:59082
+      ipStr = parts[0];
+    }
+  }
+  return ipStr || '127.0.0.1';
+};
+
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 20, // max 20 login/register/reset requests per 15 min
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: getClientIp,
+  validate: { ip: false, xForwardedForHeader: false },
   message: { error: "Too many authentication requests from this IP. Please try again after 15 minutes." }
 });
 
@@ -106,6 +128,8 @@ const publicLimiter = rateLimit({
   max: 40, // max 40 requests per min for public/scrape routes
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: getClientIp,
+  validate: { ip: false, xForwardedForHeader: false },
   message: { error: "Too many requests. Please slow down and try again shortly." }
 });
 
@@ -114,6 +138,8 @@ const generalApiLimiter = rateLimit({
   max: 300, // max 300 requests per min for standard API calls
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: getClientIp,
+  validate: { ip: false, xForwardedForHeader: false },
   message: { error: "Rate limit exceeded. Please wait a moment before trying again." }
 });
 
