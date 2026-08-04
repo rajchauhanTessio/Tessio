@@ -52,4 +52,4 @@ jobs:
           app-name: 'tessio'
           slot-name: 'Production'
           package: .
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_71D38D06324E4A74BFABE256B020442F }}
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_A7929F1F3B6145308794C0C6A5A0398D }}
